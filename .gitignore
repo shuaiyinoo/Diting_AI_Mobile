@@ -1,0 +1,59 @@
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# 构建产物
+dist/
+dist-ssr/
+*.local
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 环境变量
+# .env.development / .env.production 只放地址不含密钥，需要提交给团队共用；
+# 真正的密钥放 .env.local（已忽略）
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 测试
+coverage/
+
+# TypeScript 增量编译缓存
+*.tsbuildinfo
+
+# ────────────────────────────────────────────────────────────
+# Capacitor
+# ⚠️ ios/ 与 android/ 是【源码】，必须提交，不要忽略！
+# 只有下面这些生成物才忽略
+# ────────────────────────────────────────────────────────────
+ios/App/Pods/
+ios/App/build/
+ios/App/output/
+ios/App/DerivedData/
+ios/App/.symlinks/
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+.android/

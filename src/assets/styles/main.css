@@ -1,0 +1,494 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * 全局样式 — Diting AI Mobile
+ *
+ * 与 Desktop 保持一致的 HSL 变量体系 + markstream-vue 覆盖。
+ * Mobile 特有适配（安全区、手势等）追加在文件末尾。
+ * ============================================================ */
+
+@layer base {
+  /* ========== 亮色主题默认值（shadcn-vue 标准变量） ========== */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+
+    --radius: 0.5rem;
+
+    /* 字体变量 */
+    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Roboto Mono', ui-monospace, monospace;
+
+    /* 应用自定义变量默认值 */
+    --bg-layout: hsl(210 20% 96%);
+    --bg-panel: hsl(0 0% 100%);
+    --bg-sidebar: hsl(210 20% 96%);
+    --bg-statusbar: hsl(210 20% 96%);
+    --bg-hover: hsl(210 40% 94%);
+    --bg-active: hsl(210 40% 90%);
+    --bg-divider: hsl(214 32% 91%);
+    --bg-divider-hover: hsl(var(--primary));
+    --border-color: hsl(214 32% 91%);
+    --border-color-light: hsl(210 20% 94%);
+    --text-primary: hsl(222 47% 11%);
+    --text-secondary: hsl(215 16% 47%);
+    --text-muted: hsl(215 16% 60%);
+    --accent-color: hsl(var(--primary));
+    --accent-hover: hsl(var(--primary) / 0.8);
+    --shadow-sm: 0 1px 4px hsl(0 0% 0% / 0.06);
+    --scrollbar-thumb: hsl(215 16% 75%);
+    --scrollbar-track: transparent;
+  }
+
+  /* ========== 暗色主题默认值 ========== */
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 217 91% 60%;
+
+    /* 应用自定义变量 — 暗色默认值 */
+    --bg-layout: hsl(222 47% 8%);
+    --bg-panel: hsl(222 47% 11%);
+    --bg-sidebar: hsl(222 47% 9%);
+    --bg-statusbar: hsl(222 47% 9%);
+    --bg-hover: hsl(215 28% 17%);
+    --bg-active: hsl(215 28% 20%);
+    --bg-divider: hsl(217 33% 20%);
+    --bg-divider-hover: hsl(var(--primary));
+    --border-color: hsl(217 33% 20%);
+    --border-color-light: hsl(217 33% 17%);
+    --text-primary: hsl(210 40% 98%);
+    --text-secondary: hsl(215 20% 65%);
+    --text-muted: hsl(215 16% 47%);
+    --accent-color: hsl(var(--primary));
+    --accent-hover: hsl(var(--primary) / 0.8);
+    --shadow-sm: 0 1px 4px hsl(0 0% 0% / 0.3);
+    --scrollbar-thumb: hsl(215 16% 30%);
+    --scrollbar-track: transparent;
+  }
+
+  /* ========== 全局基础样式 ========== */
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    @apply bg-background text-foreground;
+  }
+
+  #app {
+    font-family: var(--font-family);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    height: 100%;
+    overflow: hidden;
+    @apply bg-background text-foreground;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  /* ========== 全局滚动条 ========== */
+  ::-webkit-scrollbar { width: 6px; height: 4px; }
+  ::-webkit-scrollbar-button { width: 0; height: 0; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; transition: .3s; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--accent-color); }
+  ::-webkit-scrollbar-thumb:active { background-color: var(--accent-color); }
+
+  /* ========== 文字选区颜色 ========== */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
+    color: inherit;
+  }
+  ::-moz-selection {
+    background-color: hsl(var(--primary) / 0.2);
+    color: inherit;
+  }
+  .dark ::selection,
+  .dark ::-moz-selection {
+    background-color: hsl(0 0% 100% / 0.15);
+  }
+
+  /* ========== 原生表单控件主题色 ========== */
+  input[type="time"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: hsl(var(--primary));
+  }
+
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+/* ============================================================
+ * markstream-vue 流式 Markdown 渲染器覆盖
+ * ============================================================ */
+
+.markstream-vue {
+  font-feature-settings: 'cv11', 'ss01', 'ss03', 'tnum';
+
+  --ms-font-sans: var(--font-family);
+  --ms-font-mono: var(--font-mono, 'SF Mono', Menlo, Monaco, ui-monospace, monospace);
+  --markstream-code-font-family: var(--ms-font-mono);
+
+  /* 段落间距收紧 */
+  --ms-flow-paragraph-y: 0.6em;
+  --ms-flow-heading-1-mt: 0;
+  --ms-flow-heading-1-mb: 0.5em;
+  --ms-flow-heading-2-mt: 1em;
+  --ms-flow-heading-2-mb: 0.4em;
+  --ms-flow-heading-3-mt: 0.8em;
+  --ms-flow-heading-3-mb: 0.3em;
+  --ms-flow-heading-4-mt: 0.6em;
+  --ms-flow-heading-4-mb: 0.25em;
+  --ms-flow-heading-5-mt: 0.5em;
+  --ms-flow-heading-5-mb: 0.2em;
+  --ms-flow-heading-6-mt: 0.5em;
+  --ms-flow-heading-6-mb: 0.2em;
+  --ms-leading-body: 1.6;
+  --ms-flow-codeblock-y: 0.5em;
+  --ms-flow-hr-y: 0.75em;
+  --ms-flow-blockquote-y: 0.6em;
+  --ms-flow-blockquote-indent: 1em;
+
+  /* 表格样式变量 */
+  --table-border: hsl(0 0% 0% / 0.12);
+  --table-header-bg: transparent;
+  --ms-flow-table-y: 0.75em;
+  --ms-flow-table-cell: 0.4em 0.6em;
+}
+.dark .markstream-vue {
+  --table-border: hsl(0 0% 100% / 0.1);
+}
+
+/* 代码块边框 */
+.markstream-vue .code-block-container {
+  border: 1px solid hsl(0 0% 0% / 0.12) !important;
+  border-radius: 8px !important;
+}
+.dark .markstream-vue .code-block-container {
+  border-color: hsl(0 0% 100% / 0.1) !important;
+}
+
+/* 表格 */
+.markstream-vue .table-node,
+.markstream-vue .table-node[data-v-39f87b5d] {
+  table-layout: auto !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+}
+.markstream-vue .table-node thead th,
+.markstream-vue .table-node[data-v-39f87b5d] thead th {
+  background-color: transparent !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid var(--table-border) !important;
+  border-right: none !important;
+  text-align: left;
+}
+.markstream-vue .table-node th,
+.markstream-vue .table-node td,
+.markstream-vue .table-node[data-v-39f87b5d] th,
+.markstream-vue .table-node[data-v-39f87b5d] td {
+  border-right: none !important;
+  border-bottom: 1px solid var(--table-border) !important;
+  text-align: left;
+}
+.markstream-vue .table-node tbody tr:last-child td,
+.markstream-vue .table-node[data-v-39f87b5d] tbody tr:last-child td {
+  border-bottom: none !important;
+}
+.markstream-vue .table-node tbody tr:nth-child(2n),
+.markstream-vue .table-node[data-v-39f87b5d] tbody tr:nth-child(2n) {
+  background-color: transparent !important;
+}
+.markstream-vue .table-node tbody tr:hover,
+.markstream-vue .table-node[data-v-39f87b5d] tbody tr:hover {
+  background-color: hsl(var(--primary) / 0.03) !important;
+}
+.dark .markstream-vue .table-node tbody tr:hover,
+.dark .markstream-vue .table-node[data-v-39f87b5d] tbody tr:hover {
+  background-color: hsl(0 0% 100% / 0.03) !important;
+}
+
+/* 引用块 */
+.markstream-vue .blockquote-node,
+.markstream-vue blockquote {
+  border-left: 3px solid var(--accent-color);
+  background: var(--bg-hover);
+  border-radius: 0 6px 6px 0;
+  padding: 0.4em 0.8em;
+  color: var(--text-secondary);
+}
+.dark .markstream-vue .blockquote-node,
+.dark .markstream-vue blockquote {
+  background: hsl(0 0% 100% / 0.03);
+}
+
+/* 链接 */
+.markstream-vue a {
+  color: var(--accent-color);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.markstream-vue a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* 分割线 */
+.markstream-vue hr,
+.markstream-vue .thematic-break-node {
+  border: none;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-color), transparent);
+}
+
+/* 代码块布局保护 */
+.markstream-vue pre,
+.markstream-vue .code-block-container,
+.markstream-vue .code-block-container pre,
+.markstream-vue .code-block-container code,
+.markstream-vue .code-editor-container {
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+.markstream-vue .code-editor-container,
+.markstream-vue .monaco-editor,
+.markstream-vue .monaco-editor .margin,
+.markstream-vue .monaco-editor .inputarea,
+.markstream-vue .d2-code {
+  font-family: var(--font-mono, 'SF Mono', Menlo, Monaco, ui-monospace, monospace) !important;
+}
+.markstream-vue,
+.markstream-vue .code-block-container,
+.markstream-vue .code-editor-container {
+  min-width: 0 !important;
+}
+
+/* 首尾元素去间距 */
+.markstream-vue > *:first-child {
+  margin-top: 0 !important;
+}
+.markstream-vue > *:last-child {
+  margin-bottom: 0 !important;
+}
+
+/* ========== Mention Chip 样式 ========== */
+.mention-chip,
+.skill-mention-chip,
+.mcp-mention-chip,
+.session-mention-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 2px 8px 2px 0;
+  margin: 0 1px;
+  background: hsl(var(--primary) / 0.08);
+  color: var(--accent-color);
+  cursor: pointer;
+  user-select: none;
+}
+.mention-chip::before,
+.skill-mention-chip::before,
+.mcp-mention-chip::before,
+.session-mention-chip::before {
+  content: attr(data-prefix);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px 0 0 4px;
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent-color);
+}
+.skill-mention-chip::before { background: #7C3AED; }
+.mcp-mention-chip::before { background: #059669; }
+.session-mention-chip::before { background: #EA580C; }
+
+.scheduled-run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ========== 流式渲染动画 ========== */
+@keyframes streaming-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.streaming-dot {
+  animation: streaming-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes loading-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+.loading-dot {
+  animation: loading-bounce 1.4s ease-in-out infinite;
+}
+
+/* ProcessBlock 折叠区淡入动画 */
+@keyframes process-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========== Markdown 字号控制（Mobile 专有三档） ==========
+ * Mobile 屏幕较小，字号档位整体比 Desktop 下调一级：
+ *   小（默认）= 11px ← Mobile 新增，比 Desktop 小更小
+ *   中        = 13px ← 等于 Desktop 的「小」
+ *   大        = 15px ← 等于 Desktop 的「中」
+ * 通过 <html data-md-font-size="..."> 属性驱动，
+ * 覆盖 markstream-vue 的 --ms-text-* CSS 变量。
+ */
+[data-md-font-size='small'] .markstream-vue {
+  --ms-text-body: 11px;
+  --ms-text-h1: 1.25rem;
+  --ms-text-h2: 1.0625rem;
+  --ms-text-h3: 0.9375rem;
+  --ms-text-h4: 0.8125rem;
+  --ms-text-h5: 0.75rem;
+  --ms-text-h6: 0.6875rem;
+  --ms-leading-body: 1.5;
+  --ms-flow-paragraph-y: 0.45em;
+  --ms-flow-heading-2-mt: 0.8em;
+  --ms-flow-heading-3-mt: 0.6em;
+}
+[data-md-font-size='medium'] .markstream-vue {
+  --ms-text-body: 13px;
+  --ms-text-h1: 1.5rem;
+  --ms-text-h2: 1.25rem;
+  --ms-text-h3: 1.0625rem;
+  --ms-text-h4: 0.9375rem;
+  --ms-text-h5: 0.875rem;
+  --ms-text-h6: 0.8125rem;
+  --ms-leading-body: 1.55;
+  --ms-flow-paragraph-y: 0.5em;
+  --ms-flow-heading-2-mt: 1em;
+  --ms-flow-heading-3-mt: 0.8em;
+}
+[data-md-font-size='large'] .markstream-vue {
+  --ms-text-body: 15px;
+  --ms-text-h1: 2rem;
+  --ms-text-h2: 1.5rem;
+  --ms-text-h3: 1.25rem;
+  --ms-text-h4: 1rem;
+  --ms-text-h5: 0.9375rem;
+  --ms-text-h6: 0.875rem;
+  --ms-leading-body: 1.7;
+  --ms-flow-paragraph-y: 0.6em;
+  --ms-flow-heading-2-mt: 1.2em;
+  --ms-flow-heading-3-mt: 1em;
+}
+
+/* ============================================================
+ * Mobile 特有适配
+ * ============================================================ */
+
+/* 安全区适配 */
+@layer utilities {
+  .pt-safe {
+    padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  }
+  .pb-safe {
+    padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  }
+  .pl-safe {
+    padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  }
+  .pr-safe {
+    padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  }
+  .p-safe {
+    padding: var(--safe-area-inset-top, env(safe-area-inset-top, 0px))
+      var(--safe-area-inset-right, env(safe-area-inset-right, 0px))
+      var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+      var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  }
+  .pb-tab {
+    padding-bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 3.75rem);
+  }
+  .pl-tab {
+    padding-left: calc(var(--safe-area-inset-left, env(safe-area-inset-left, 0px)) + 3.75rem);
+  }
+  .touch-none {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
