@@ -26,6 +26,8 @@ export function useRemoteSession(sessionCode: string) {
   const quality = ref<'low' | 'medium' | 'high'>('low')
   /** 推流分辨率：与控制端 UI 双向绑定，默认 480p（最省带宽） */
   const resolution = ref<'480p' | '720p' | '1080p' | 'native'>('480p')
+  /** ICE 连接类型：relay=中继(TURN) / srflx=P2P(STUN反射) / host=局域网直连 */
+  const connectionType = ref<'relay' | 'srflx' | 'host' | ''>('')
 
   // 复用全局 SignalingClient（登录后常驻的 STOMP 连接）
   const appStore = useAppStore()
@@ -114,6 +116,52 @@ export function useRemoteSession(sessionCode: string) {
   }
 
   /* ────────────────────────────────────────────────────────────
+     编解码器偏好
+     ──────────────────────────────────────────────────────────── */
+  /**
+   * 构建视频编解码器偏好列表
+   *
+   * 降级策略：AV1 → VP9 → H.264
+   * - AV1：压缩率最高，同等画质下带宽约为 H.264 的 30-50%
+   * - VP9：次优，带宽约为 H.264 的 60-70%
+   * - H.264：兜底，全平台硬件编解码，兼容性最好
+   *
+   * setCodecPreferences 只是设置偏好顺序，最终编码仍由 SDP 协商决定。
+   * 若本端不支持 AV1 解码，协商结果会自动降级到 VP9 或 H.264。
+   */
+  function buildPreferredCodecs(): RTCRtpCodecCapability[] {
+    const caps = RTCRtpSender.getCapabilities('video')
+    if (!caps?.codecs) return []
+    const priority: Record<string, number> = { 'video/AV1': 0, 'video/VP9': 1, 'video/H264': 2 }
+    const preferred = caps.codecs
+      .filter((c) => c.mimeType in priority)
+      .sort((a, b) => (priority[a.mimeType] ?? 99) - (priority[b.mimeType] ?? 99))
+    // 把剩余编码器追加到末尾
+    const rest = caps.codecs.filter((c) => !(c.mimeType in priority))
+    return [...preferred, ...rest]
+  }
+
+  /**
+   * 对 PeerConnection 上所有 video transceiver 设置编解码器偏好
+   *
+   * answer 方在 setRemoteDescription(offer) 后调用：
+   * 此时 offer 的 m-line 已在本地创建 transceiver，可以拿到并设置偏好。
+   * 必须在 createAnswer 之前调用，否则 answer 中的编解码器列表不会反映偏好。
+   */
+  function applyCodecPreferences() {
+    if (!pc) return
+    const preferred = buildPreferredCodecs()
+    if (preferred.length === 0) return
+    for (const transceiver of pc.getTransceivers()) {
+      try {
+        transceiver.setCodecPreferences(preferred)
+      } catch (e) {
+        console.warn('[rtc] setCodecPreferences 失败（不影响连接）:', e)
+      }
+    }
+  }
+
+  /* ────────────────────────────────────────────────────────────
      PeerConnection
      ──────────────────────────────────────────────────────────── */
   function createPeer(iceServers: RTCIceServer[]): RTCPeerConnection {
@@ -165,6 +213,27 @@ export function useRemoteSession(sessionCode: string) {
         }, 2_000)
       }
       if (s === 'failed') void doIceRestart()
+      // 连接成功后检测 ICE 类型（relay=中继 / srflx=P2P / host=局域网）
+      if (s === 'connected' && pc) {
+        pc.getStats().then(stats => {
+          stats.forEach(r => {
+            if (r.type === 'candidate-pair' && r.state === 'succeeded') {
+              const lc = stats.get(r.localCandidateId)
+              const rc = stats.get(r.remoteCandidateId)
+              const lt = lc?.candidateType
+              const rt = rc?.candidateType
+              // 任一端是 relay 就说明走了 TURN 中继
+              const type = lt === 'relay' || rt === 'relay'
+                ? 'relay'
+                : lt === 'srflx' || rt === 'srflx'
+                  ? 'srflx'
+                  : 'host'
+              connectionType.value = type as 'relay' | 'srflx' | 'host'
+              console.log(`[rtc] ICE 类型: local=${lt} remote=${rt} → ${connectionType.value}`)
+            }
+          })
+        }).catch(() => {})
+      }
     }
 
     pc.onconnectionstatechange = () => {
@@ -219,6 +288,9 @@ export function useRemoteSession(sessionCode: string) {
       case 'offer': {
         // 受控端主动发起（它检测到断连后重建），控制端应答
         await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp))
+        // setRemoteDescription 后、createAnswer 前：设置编解码器偏好
+        // 此时 offer 的 m-line 已在本地创建 transceiver，可以设置偏好
+        applyCodecPreferences()
         remoteSdpSet = true
         await flushCandidates()
         const answer = await pc.createAnswer()
@@ -412,6 +484,8 @@ export function useRemoteSession(sessionCode: string) {
     displays,
     activeDisplayId,
     errorMessage,
+    /** ICE 连接类型：relay=中继 / srflx=P2P / host=局域网 */
+    connectionType,
     start,
     destroy,
     reconnect: () => {

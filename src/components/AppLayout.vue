@@ -26,6 +26,8 @@ const WIDE_MIN_WIDTH = 768
 const isWide = ref(window.innerWidth >= WIDE_MIN_WIDTH)
 
 function updateLayout() {
+  // 小屏旋转全屏期间冻结断点：App 布局必须保持竖屏（顶栏/底部 TabBar 不重排）
+  if (remoteFullscreen.value && !isWide.value) return
   isWide.value = window.innerWidth >= WIDE_MIN_WIDTH
 }
 onMounted(() => {
@@ -99,7 +101,20 @@ function closeRemote() {
   remoteCode.value = null
   remoteDrawerOpen.value = false
   remoteError.value = ''
+  remoteFullscreen.value = false
 }
+
+/* ─────────── 横屏全屏状态：RemoteView 通知父容器切换全屏遮罩 ─────────── */
+const remoteFullscreen = ref(false)
+
+function onRemoteFullscreenChange(active: boolean) {
+  remoteFullscreen.value = active
+}
+
+// 投屏隐藏（切到设置页 / 收起抽屉 / 断开）时退出全屏，恢复方向解锁
+watch(showRemoteScreen, (v) => {
+  if (!v) remoteFullscreen.value = false
+})
 
 /* ─────────── 侧边栏宽度统一管理（Chat/Agent/远程抽屉/输入栏全部基于此偏移） ─────────── */
 const SIDEBAR_MIN = 250
@@ -231,21 +246,31 @@ function onSend(text: string) {
       </button>
 
       <!-- 远程投屏抽屉：大屏时绝对定位浮层（不挤压下方内容），小屏时占据垂直流 -->
+      <!--
+        全屏时（小屏旋转 / 大屏放大）：容器切换为 absolute inset-0 全屏遮罩，
+        正好 = 「顶栏下方 ~ 底部 TabBar 上方」的中间区域。
+        RemoteView 在这个容器内旋转 90°（小屏）或直接填满（大屏），
+        顶栏与 TabBar 始终可见，App 布局保持竖屏不重排。
+      -->
       <div
         v-if="remoteCode"
         v-show="showRemoteScreen"
-        class="border-b border-border bg-background shadow-lg"
-        :class="isWide ? 'absolute z-30' : 'shrink-0 w-full'"
-        :style="isWide
+        :class="remoteFullscreen
+          ? ['absolute inset-0 z-40 bg-black', isWide && 'pb-safe']
+          : isWide
+            ? 'absolute z-30 border-b border-border bg-background shadow-lg'
+            : 'shrink-0 w-full border-b border-border bg-background shadow-lg'"
+        :style="!remoteFullscreen && isWide
           ? { marginLeft: sidebarOffset + 'px', width: `calc(100% - ${sidebarOffset}px)`, top: '41px' }
           : {}"
       >
         <RemoteView
           embedded
+          :fullscreen="remoteFullscreen"
           :code="remoteCode"
-          :token="app.token"
           @collapse="remoteDrawerOpen = false"
           @exit="closeRemote"
+          @fullscreen-change="onRemoteFullscreenChange"
         />
       </div>
 
@@ -277,7 +302,7 @@ function onSend(text: string) {
       <!-- 大屏拖动条：在 main 层渲染，h-full 覆盖含输入栏的完整高度 -->
       <!-- touch-action: none 防止移动端滚动手势拦截 pointermove -->
       <div
-        v-if="isWide && showRemoteBar && sidebarDrawerOpen"
+        v-if="isWide && showRemoteBar && sidebarDrawerOpen && !remoteFullscreen"
         class="absolute top-0 z-40 h-full w-2 cursor-col-resize touch-none"
         :style="{ left: `${sidebarWidth - 4}px` }"
         @pointerdown="onSidebarDragStart"

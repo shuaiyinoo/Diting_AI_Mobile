@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, type Ref } from 'vue'
+import { onBeforeUnmount, watch, type Ref } from 'vue'
 
 export interface GestureCallbacks {
   /** 单击（左键） */
@@ -42,6 +42,15 @@ export function useGestures(
   elRef: Ref<HTMLElement | null>,
   videoRef: Ref<HTMLVideoElement | null>,
   cb: GestureCallbacks,
+  opts?: {
+    /**
+     * 旋转全屏模式（CSS rotate(90deg)）下为 true。
+     * 此时视频元素的本地盒与视觉包围盒宽高互换，
+     * 有效显示区计算需要先在本地坐标系做 object-contain，
+     * 再旋转映射回视觉坐标。
+     */
+    isRotated?: () => boolean
+  },
 ) {
   let startX = 0
   let startY = 0
@@ -81,12 +90,38 @@ export function useGestures(
     // 流还没来时拿不到真实分辨率，退化为整个元素盒子
     if (!vw || !vh) return { left: vb.left, top: vb.top, width: vb.width, height: vb.height }
 
-    const boxAspect = vb.width / vb.height
     const videoAspect = vw / vh
+
+    // 旋转 90° 模式：本地盒宽高 = 视觉包围盒宽高互换（vb.width 是本地高度，vb.height 是本地宽度）
+    if (opts?.isRotated?.()) {
+      const lw = vb.height // 本地宽
+      const lh = vb.width // 本地高
+      const boxAspect = lw / lh
+      let cw: number
+      let ch: number
+      if (videoAspect > boxAspect) {
+        // 画面更宽 → 本地上下黑边
+        cw = lw
+        ch = lw / videoAspect
+      } else {
+        // 画面更高 → 本地左右黑边
+        ch = lh
+        cw = lh * videoAspect
+      }
+      const cl = (lw - cw) / 2
+      const ct = (lh - ch) / 2
+      // 本地 (x, y) → 视觉 (lh - y, x)：内容矩形旋转后的视觉位置
+      return {
+        left: vb.left + (lh - ct - ch),
+        top: vb.top + cl,
+        width: ch,
+        height: cw,
+      }
+    }
 
     let width: number
     let height: number
-    if (videoAspect > boxAspect) {
+    if (videoAspect > vb.width / vb.height) {
       // 画面更宽 → 上下黑边
       width = vb.width
       height = vb.width / videoAspect
@@ -244,24 +279,35 @@ export function useGestures(
     e.preventDefault() // 屏蔽系统长按菜单，否则会打断长按手势
   }
 
-  onMounted(() => {
-    const el = elRef.value
+  function attach(el: HTMLElement | null) {
     if (!el) return
     el.addEventListener('touchstart', onTouchStart, { passive: false })
     el.addEventListener('touchmove', onTouchMove, { passive: false })
     el.addEventListener('touchend', onTouchEnd)
     el.addEventListener('touchcancel', onTouchEnd)
     el.addEventListener('contextmenu', onContextMenu)
-  })
+  }
 
-  onBeforeUnmount(() => {
-    const el = elRef.value
+  function detach(el: HTMLElement | null) {
     if (!el) return
     el.removeEventListener('touchstart', onTouchStart)
     el.removeEventListener('touchmove', onTouchMove)
     el.removeEventListener('touchend', onTouchEnd)
     el.removeEventListener('touchcancel', onTouchEnd)
     el.removeEventListener('contextmenu', onContextMenu)
+  }
+
+  // 使用 watch 自动追踪 ref 变化，在 v-if/v-else 切换时重新绑定监听器
+  let currentEl: HTMLElement | null = null
+  const stopWatch = watch(elRef, (newEl, oldEl) => {
+    if (oldEl && oldEl !== newEl) detach(oldEl)
+    if (newEl && newEl !== oldEl) attach(newEl)
+    currentEl = newEl
+  }, { immediate: true })
+
+  onBeforeUnmount(() => {
+    stopWatch()
+    detach(currentEl)
     clearTimeout(longPressTimer)
   })
 
