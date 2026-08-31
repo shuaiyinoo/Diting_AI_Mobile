@@ -1,0 +1,424 @@
+# GitHub Actions: Diting Mobile 自动打包分发
+#
+# 触发条件：推送 v* tag（如 v1.0.0）
+# 构建 Android (APK) / iOS (IPA) 产物并发布到 GitHub Releases
+#
+# 所需 GitHub Secrets（全部可选，不配置也能出包）:
+#
+# Android 签名（不配则 CI 生成临时密钥签名，可直接安装升级，但不能上架商店）:
+# - ANDROID_KEYSTORE_BASE64: Base64 编码的 keystore (.jks/.keystore)
+# - ANDROID_KEYSTORE_PASSWORD: keystore 密码
+# - ANDROID_KEY_ALIAS: 密钥别名
+# - ANDROID_KEY_PASSWORD: 密钥密码（与 keystore 密码相同可不配）
+#
+# iOS 签名（不配则产出【未签名】IPA，需用 Sideloadly / 爱思助手等自签后安装）:
+# - IOS_CERTIFICATES_P12_BASE64: Base64 编码的发布证书 (.p12)
+# - IOS_CERTIFICATES_PASSWORD: 证书密码
+# - IOS_PROVISIONING_PROFILE_BASE64: Base64 编码的描述文件 (.mobileprovision，建议 Ad Hoc)
+# - IOS_TEAM_ID: Apple Developer Team ID（10 位）
+#
+# GITHUB_TOKEN 由 GitHub Actions 自动提供，无需手动配置
+#
+# 使用方式：
+#   1. 在 release-notes/ 目录创建 vX.X.X.md 更新日志（可选，缺省用默认文案）
+#   2. git tag vX.X.X
+#   3. git push origin vX.X.X
+#   4. CI 自动构建 Android/iOS 产物并发布到 GitHub Release
+#
+# 产物说明：
+#   - Diting-Android-x.x.x.apk          Android 安装包（已签名）
+#   - Diting-iOS-x.x.x.ipa              iOS 安装包（已签名，配置了 iOS Secrets 时）
+#   - Diting-iOS-unsigned-x.x.x.ipa     iOS 未签名包（未配置 iOS Secrets 时）
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================================
+  # Job 0: 创建 Draft Release（确保只有一个 Release，避免并行 build 竞态）
+  # ============================================================
+  create-release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 创建 Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          NOTES_FILE="release-notes/${TAG}.md"
+
+          # 检查 Release 是否已存在
+          EXISTING=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/releases" \
+            | python3 -c "
+          import json, sys
+          for r in json.load(sys.stdin):
+              if r.get('tag_name') == '${TAG}':
+                  print(r['id']); break
+          " || true)
+
+          if [ -n "$EXISTING" ]; then
+            echo "Release already exists (ID: ${EXISTING}), skipping creation"
+            exit 0
+          fi
+
+          # 用 Python 构造 JSON payload（安全处理多行文本和特殊字符）
+          PAYLOAD=$(python3 -c "
+          import json
+          tag = '${TAG}'
+          notes_file = '${NOTES_FILE}'
+          try:
+              with open(notes_file, 'r') as f:
+                  body = f.read()
+          except FileNotFoundError:
+              body = f'Release {tag}'
+          print(json.dumps({'tag_name': tag, 'name': tag, 'body': body, 'draft': True, 'prerelease': False}))
+          ")
+
+          # 创建 draft release
+          curl -s -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "https://api.github.com/repos/${REPO}/releases" \
+            | python3 -c "import json,sys; r=json.load(sys.stdin); print(f'Created draft release: {r.get(\"id\",\"?\")} (tag: {r.get(\"tag_name\",\"?\")})')"
+
+  # ============================================================
+  # Job 1: Android APK
+  #
+  # 流程：Vite 构建 Web → cap sync → gradle assembleRelease
+  #      → zipalign + apksigner 签名（Secrets keystore 或 CI 临时密钥）
+  # ============================================================
+  build-android:
+    name: build (ubuntu-latest, android, apk)
+    runs-on: ubuntu-latest
+    needs: create-release
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装 JDK 17（Gradle / AGP 8 要求）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 补齐 Android SDK 组件（platform 36）
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "platforms;android-36" > /dev/null
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 Web 产物（Vite）
+        run: npm run build
+
+      - name: 同步到 Android 工程（Capacitor）
+        run: npx cap sync android
+
+      # local.properties 记录的是开发机的 SDK 绝对路径，在 CI 上无效（Gradle 自动改用 ANDROID_HOME）
+      - name: 清理本机 SDK 路径配置
+        run: rm -f android/local.properties
+
+      - name: 注入版本号（tag → versionName，run number → versionCode）
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/versionCode [0-9]*/versionCode ${GITHUB_RUN_NUMBER}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${VERSION}\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+
+      - name: 构建 Release APK（未签名）
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      # 签名策略：配置了 Secrets 用正式 keystore；否则生成 CI 临时密钥（可安装、不可上架）
+      - name: 签名 APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          UNSIGNED_APK=$(ls android/app/build/outputs/apk/release/*.apk | head -n1)
+          echo "未签名 APK: ${UNSIGNED_APK}"
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "使用 Secrets 中的正式 keystore 签名"
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > release.keystore
+            KS=release.keystore
+            KS_PASS="${ANDROID_KEYSTORE_PASSWORD}"
+            KS_ALIAS="${ANDROID_KEY_ALIAS}"
+            KEY_PASS="${ANDROID_KEY_PASSWORD:-${ANDROID_KEYSTORE_PASSWORD}}"
+          else
+            echo "⚠️ 未配置 ANDROID_KEYSTORE_* Secrets，生成 CI 临时密钥签名（仅可安装测试，不可上架）"
+            keytool -genkeypair -v \
+              -keystore release.keystore -storetype PKCS12 \
+              -storepass diting-temp-key -keypass diting-temp-key \
+              -alias diting -keyalg RSA -keysize 2048 -validity 10950 \
+              -dname "CN=Diting Mobile, OU=Mobile, O=Diting, C=CN"
+            KS=release.keystore
+            KS_PASS=diting-temp-key
+            KS_ALIAS=diting
+            KEY_PASS=diting-temp-key
+          fi
+
+          # 定位最新 build-tools 里的 zipalign / apksigner
+          BT_DIR=$(dirname "$(find "${ANDROID_HOME}/build-tools" -name apksigner | sort -V | tail -1)")
+          echo "build-tools: ${BT_DIR}"
+
+          "${BT_DIR}/zipalign" -f -p 4 "${UNSIGNED_APK}" aligned.apk
+          "${BT_DIR}/apksigner" sign \
+            --ks "${KS}" \
+            --ks-key-alias "${KS_ALIAS}" \
+            --ks-pass "pass:${KS_PASS}" \
+            --key-pass "pass:${KEY_PASS}" \
+            --out "Diting-Android-${VERSION}.apk" \
+            aligned.apk
+
+          "${BT_DIR}/apksigner" verify --print-certs "Diting-Android-${VERSION}.apk" | head -5
+          ls -lh "Diting-Android-${VERSION}.apk"
+
+      - name: 上传 APK 到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release upload "${TAG}" Diting-Android-*.apk --clobber
+          echo "✅ APK 已上传到 ${TAG}"
+
+  # ============================================================
+  # Job 2: iOS IPA
+  #
+  # 流程：Vite 构建 Web → cap sync → xcodebuild archive
+  #      - 配置了 iOS Secrets：手动签名（证书 + Ad Hoc 描述文件）→ 已签名 IPA
+  #      - 未配置：CODE_SIGNING_ALLOWED=NO 归档 → 未签名 IPA（需自签侧载）
+  # ============================================================
+  build-ios:
+    name: build (macos-latest, ios, ipa)
+    runs-on: macos-latest
+    needs: create-release
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建 Web 产物（Vite）
+        run: npm run build
+
+      - name: 同步到 iOS 工程（Capacitor，SPM 依赖由 Xcode 自动解析）
+        run: npx cap sync ios
+
+      - name: 注入版本号（tag → CFBundleShortVersionString，run number → CFBundleVersion）
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" ios/App/App/Info.plist
+
+      # ────────── 签名准备（可选）：导入证书 + 安装描述文件 ──────────
+      - name: 导入 iOS 签名证书与描述文件
+        if: ${{ env.IOS_CERTIFICATES_P12_BASE64 != '' }}
+        env:
+          IOS_CERTIFICATES_P12_BASE64: ${{ secrets.IOS_CERTIFICATES_P12_BASE64 }}
+          IOS_CERTIFICATES_PASSWORD: ${{ secrets.IOS_CERTIFICATES_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$IOS_CERTIFICATES_P12_BASE64" | base64 --decode > $RUNNER_TEMP/cert.p12
+          security import $RUNNER_TEMP/cert.p12 -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+          rm $RUNNER_TEMP/cert.p12
+
+          # 安装描述文件（解析 UUID 后按规范命名放入标准目录）
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > $RUNNER_TEMP/profile.mobileprovision
+          mkdir -p ~/Library/MobileDevice/"Provisioning Profiles"
+          UUID=$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)
+          cp "$RUNNER_TEMP/profile.mobileprovision" ~/Library/MobileDevice/"Provisioning Profiles/${UUID}.mobileprovision"
+
+          # 记录 profile 名称，供 xcodebuild 的 PROVISIONING_PROFILE_SPECIFIER 使用
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
+            | /usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin > "$RUNNER_TEMP/profile_name.txt"
+          echo "Profile: $(cat "$RUNNER_TEMP/profile_name.txt")"
+
+      # ────────── 构建：已签名（Ad Hoc 导出） ──────────
+      - name: 构建 iOS IPA（已签名）
+        if: ${{ env.IOS_CERTIFICATES_P12_BASE64 != '' }}
+        env:
+          IOS_CERTIFICATES_P12_BASE64: ${{ secrets.IOS_CERTIFICATES_P12_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          PROFILE_NAME=$(cat "$RUNNER_TEMP/profile_name.txt")
+
+          xcodebuild -project ios/App/App.xcodeproj \
+            -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
+            PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" \
+            clean archive
+
+          cat > "$RUNNER_TEMP/exportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          # 团队 ID 由 export 时根据证书自动推断，无需硬编码
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/exportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+
+          mv "$RUNNER_TEMP/export/App.ipa" "Diting-iOS-${VERSION}.ipa"
+          ls -lh "Diting-iOS-${VERSION}.ipa"
+
+      # ────────── 构建：未签名（需 Sideloadly / 爱思助手等自签后安装） ──────────
+      - name: 构建 iOS IPA（未签名）
+        if: ${{ env.IOS_CERTIFICATES_P12_BASE64 == '' }}
+        env:
+          IOS_CERTIFICATES_P12_BASE64: ${{ secrets.IOS_CERTIFICATES_P12_BASE64 }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          echo "⚠️ 未配置 IOS_* Secrets，产出未签名 IPA（需自行签名安装）"
+
+          xcodebuild -project ios/App/App.xcodeproj \
+            -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            clean archive
+
+          # 手动把 .app 打包成 IPA 目录结构（未签名包无法用 -exportArchive 导出）
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App" "$RUNNER_TEMP/Payload/"
+          (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/Diting-iOS-unsigned-${VERSION}.ipa" Payload)
+
+          ls -lh "Diting-iOS-unsigned-${VERSION}.ipa"
+
+      - name: 上传 IPA 到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ls -lh Diting-iOS-*.ipa
+          gh release upload "${TAG}" Diting-iOS-*.ipa --clobber
+          echo "✅ IPA 已上传到 ${TAG}"
+
+  # ============================================================
+  # Job 3: 更新 Release Notes 并发布 Draft Release
+  # ============================================================
+  update-release-notes:
+    name: Update Release Notes & Publish
+    runs-on: ubuntu-latest
+    needs: [build-android, build-ios]
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 更新 Release Notes 并发布
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          NOTES_FILE="release-notes/${TAG}.md"
+
+          # 查找 Release（draft 状态，需遍历列表）
+          RELEASE_ID=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/releases" \
+            | python3 -c "
+          import json, sys
+          for r in json.load(sys.stdin):
+              if r.get('tag_name') == '${TAG}':
+                  print(r['id']); break
+          ")
+
+          if [ -z "$RELEASE_ID" ]; then
+            echo "ERROR: Release not found for tag ${TAG}"
+            exit 1
+          fi
+          echo "Release ID: ${RELEASE_ID}"
+
+          # 读取 release notes
+          if [ -f "$NOTES_FILE" ]; then
+            echo "Found release notes file: ${NOTES_FILE}"
+            BODY=$(python3 -c "
+          import json
+          with open('${NOTES_FILE}', 'r') as f:
+              print(json.dumps(f.read()))
+          ")
+          else
+            echo "⚠️ No release notes file found at ${NOTES_FILE}, using default"
+            BODY=$(python3 -c "import json; print(json.dumps('Release ${TAG}'))")
+          fi
+
+          # 更新 Release body 并发布（draft: false）
+          curl -s -X PATCH \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\": ${BODY}, \"draft\": false}" \
+            "https://api.github.com/repos/${REPO}/releases/${RELEASE_ID}" \
+            | python3 -c "import json,sys; r=json.load(sys.stdin); print(f'✅ Release published: {r.get(\"tag_name\",\"?\")} (draft={r.get(\"draft\",\"?\")})')"
