@@ -361,7 +361,7 @@ export const useAppStore = defineStore('app', () => {
       case 'text_start': {
         const last = blocks[blocks.length - 1]
         if (!last || last.type !== 'text') {
-          blocks.push({ type: 'text', text: '' } as any)
+          blocks.push({ type: 'text', text: '' })
         }
         break
       }

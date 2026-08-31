@@ -40,6 +40,8 @@ export interface ChatSessionItem {
   id: number
   title: string
   lastMessageAt: string | null
+  /** 最近一条消息预览（列表副标题） */
+  preview?: string
 }
 
 /** Agent 项目列表项（与 Desktop 端 WorkspaceMeta 对齐） */
@@ -55,6 +57,8 @@ export interface AgentSessionItem {
   title: string
   workspaceId: string
   updatedAt: number
+  /** 最近一条消息预览（列表副标题） */
+  preview?: string
 }
 
 /** Agent 完整同步数据 */
@@ -78,9 +82,12 @@ export interface Citation {
   [key: string]: unknown
 }
 
-/** 消息块（thinking / tool_use） */
+/** 消息块（text / thinking / tool_use） */
 export interface MessageBlock {
-  type: 'thinking' | 'tool_use'
+  type: 'text' | 'thinking' | 'tool_use'
+  /** type=text：正文内容 */
+  text?: string
+  /** type=thinking：思考过程 */
   thinking?: string
   name?: string
   input?: Record<string, unknown>

@@ -31,7 +31,6 @@ export class SignalingClient {
   /** stream-sync 推送订阅（随连接常驻） */
   private streamSubscription: StompSubscription | null = null
   private sessionCode = ''
-  private token: string | null = null
   private userId: number | null = null
   /**
    * 本端角色，决定订阅哪个 topic。
@@ -75,7 +74,6 @@ export class SignalingClient {
    * @param userId 当前用户 ID，用于拼 sync topic
    */
   connect(token: string, userId: number): Promise<void> {
-    this.token = token
     this.userId = userId
 
     return new Promise((resolve, reject) => {

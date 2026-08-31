@@ -113,7 +113,9 @@ import CitationRail from '@/components/CitationRail.vue'
 
 /** 消息项类型 */
 interface MessageBlock {
-  type: 'thinking' | 'tool_use'
+  type: 'text' | 'thinking' | 'tool_use'
+  /** type=text：正文内容 */
+  text?: string
   thinking?: string
   name?: string
   input?: Record<string, unknown>
@@ -163,10 +165,13 @@ defineEmits<{
   'citation-click': [cite: unknown]
 }>()
 
-/** 从 blocks 中筛选过程块 */
-function getProcessBlocks(blocks: MessageBlock[]) {
+/** 过程块（thinking / tool_use），ProcessBlockGroup 的入参类型 */
+type ProcessBlock = Extract<MessageBlock, { type: 'thinking' | 'tool_use' }>
+
+/** 从 blocks 中筛选过程块（text 块不属于过程块，被类型谓词自然排除） */
+function getProcessBlocks(blocks: MessageBlock[]): ProcessBlock[] {
   if (!blocks || !Array.isArray(blocks)) return []
-  return blocks.filter((b) =>
+  return blocks.filter((b): b is ProcessBlock =>
     b.type === 'thinking'
     || (b.type === 'tool_use' && b.name !== 'TaskCreate' && b.name !== 'TaskUpdate'),
   )

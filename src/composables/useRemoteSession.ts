@@ -129,7 +129,13 @@ export function useRemoteSession(sessionCode: string) {
    * setCodecPreferences 只是设置偏好顺序，最终编码仍由 SDP 协商决定。
    * 若本端不支持 AV1 解码，协商结果会自动降级到 VP9 或 H.264。
    */
-  function buildPreferredCodecs(): RTCRtpCodecCapability[] {
+  /**
+   * 视频编解码能力类型：直接从 RTCRtpSender.getCapabilities 返回值的 codecs 数组提取元素类型，
+   * 不硬编码全局接口名（部分 TS lib.dom 版本未导出 RTCRtpCodecCapability）
+   */
+  type VideoCodecCapability = NonNullable<ReturnType<typeof RTCRtpSender.getCapabilities>>['codecs'][number]
+
+  function buildPreferredCodecs(): VideoCodecCapability[] {
     const caps = RTCRtpSender.getCapabilities('video')
     if (!caps?.codecs) return []
     const priority: Record<string, number> = { 'video/AV1': 0, 'video/VP9': 1, 'video/H264': 2 }
@@ -427,7 +433,11 @@ export function useRemoteSession(sessionCode: string) {
     cleanups.push(() => clearInterval(aliveTimer))
   }
 
-  async function start(token: string | null) {
+  /**
+   * @param _token 兼容旧签名保留；JWT 已由全局信令连接（stores/app 层 connect）持有，
+   *               这里复用已有 STOMP 连接，无需再次使用
+   */
+  async function start(_token: string | null) {
     state.value = 'signaling'
 
     const sig = getSignaling()

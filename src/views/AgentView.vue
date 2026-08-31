@@ -32,8 +32,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** 选中了某个会话 */
   select: [info: { sessionType: 'chat' | 'agent'; sessionId: string }]
-  /** 大屏侧边栏展开/收起切换请求 */
-  toggleSidebar: []
+  /** 大屏侧边栏展开/收起切换请求（模板中以 kebab-case 触发） */
+  'toggle-sidebar': []
 }>()
 
 const appStore = useAppStore()

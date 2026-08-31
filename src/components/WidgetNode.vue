@@ -17,7 +17,7 @@
  * 6. 全屏模式 — 使用 Teleport 到 body，绕过 markstream-vue 的 transform 降级
  */
 
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import DOMPurify from 'dompurify'
 
 interface CodeBlockNodeData {

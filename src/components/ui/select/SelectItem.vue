@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { SelectItem, SelectItemIndicator, SelectItemText } from 'reka-ui'
+import type { AcceptableValue } from 'reka-ui'
 import { Check } from '@lucide/vue'
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<{
-  value: string | number | boolean
+  value: AcceptableValue
   disabled?: boolean
   class?: string
 }>(), {
