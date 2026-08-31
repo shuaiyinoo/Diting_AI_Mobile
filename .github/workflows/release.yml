@@ -127,11 +127,29 @@ jobs:
 
       - name: 补齐 Android SDK 组件（platform 36）
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-36" > /dev/null
+          # runner 大概率已预装，先检查避免不必要的安装
+          if [ -d "${ANDROID_HOME}/platforms/android-36" ]; then
+            echo "✅ platform android-36 已预装，跳过"
+            exit 0
+          fi
+          # sdkmanager 不在默认 PATH 中，定位 cmdline-tools 里的实际路径
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "${SDKMANAGER}" ]; then
+            SDKMANAGER=$(find "${ANDROID_HOME}/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -V | tail -1)
+          fi
+          if [ -z "${SDKMANAGER}" ] || [ ! -x "${SDKMANAGER}" ]; then
+            echo "❌ 未找到 sdkmanager，ANDROID_HOME=${ANDROID_HOME}"
+            ls -R "${ANDROID_HOME}/cmdline-tools" || true
+            exit 1
+          fi
+          echo "sdkmanager: ${SDKMANAGER}"
+          yes | "${SDKMANAGER}" --licenses > /dev/null || true
+          "${SDKMANAGER}" --install "platforms;android-36" > /dev/null
 
+      # 用 npm install 而非 npm ci：不要求 package-lock.json 与 package.json 严格同步，
+      # 按 package.json 实时解析安装（个人项目优先保证 CI 不因 lock 过期而失败）
       - name: 安装依赖
-        run: npm ci
+        run: npm install
 
       - name: 构建 Web 产物（Vite）
         run: npm run build
@@ -237,8 +255,9 @@ jobs:
         with:
           node-version: 22
 
+      # 同 Android job：用 npm install 规避 lock 文件不同步问题
       - name: 安装依赖
-        run: npm ci
+        run: npm install
 
       - name: 构建 Web 产物（Vite）
         run: npm run build
