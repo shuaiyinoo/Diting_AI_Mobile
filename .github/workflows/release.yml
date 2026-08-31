@@ -119,11 +119,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: 安装 JDK 17（Gradle / AGP 8 要求）
+      - name: 安装 JDK 21（Capacitor 8 的 Android 模块要求 sourceCompatibility 21）
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: 补齐 Android SDK 组件（platform 36）
         run: |
@@ -351,6 +351,9 @@ jobs:
           ls -lh "Diting-iOS-${VERSION}.ipa"
 
       # ────────── 构建：未签名（需 Sideloadly / 爱思助手等自签后安装） ──────────
+      # 注意：CODE_SIGNING_ALLOWED=NO 时 xcodebuild archive 不会把 App.app 放进
+      # .xcarchive/Products/Applications（留在 DerivedData 的归档中间目录），
+      # 所以未签名路径改用普通 build + 显式 derivedDataPath，产物路径固定可控
       - name: 构建 iOS IPA（未签名）
         if: ${{ env.IOS_CERTIFICATES_P12_BASE64 == '' }}
         env:
@@ -364,13 +367,21 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj \
             -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            clean archive
+            clean build
+
+          # App.app 产物在 derivedDataPath 下，路径固定
+          APP_PATH="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
+          if [ ! -d "${APP_PATH}" ]; then
+            echo "❌ 未找到 App.app，搜索实际产物路径..."
+            find "$RUNNER_TEMP/dd/Build/Products" -name "*.app" -maxdepth 2 -type d
+            exit 1
+          fi
 
           # 手动把 .app 打包成 IPA 目录结构（未签名包无法用 -exportArchive 导出）
           mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App" "$RUNNER_TEMP/Payload/"
+          cp -R "${APP_PATH}" "$RUNNER_TEMP/Payload/"
           (cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/Diting-iOS-unsigned-${VERSION}.ipa" Payload)
 
           ls -lh "Diting-iOS-unsigned-${VERSION}.ipa"
