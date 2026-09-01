@@ -281,6 +281,46 @@ jobs:
           IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
         run: |
           set -euo pipefail
+
+          # ═══ 1. 校验 P12 证书（提前暴露内容不完整/配错的 Secret） ═══
+          echo "$IOS_CERTIFICATES_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          P12_SIZE=$(stat -f%z "$RUNNER_TEMP/cert.p12")
+          if [ "${P12_SIZE}" -lt 1000 ]; then
+            echo "❌ IOS_CERTIFICATES_P12_BASE64 解码后仅 ${P12_SIZE} 字节，内容不完整（正常应为几 KB）"
+            echo "   生成命令（macOS）: base64 -i 证书.p12 | pbcopy"
+            echo "   注意: 钥匙串导出时必须同时选中【证书 + 私钥】导出为 .p12"
+            exit 1
+          fi
+          echo "✅ P12 证书: ${P12_SIZE} 字节 ($(file -b "$RUNNER_TEMP/cert.p12"))"
+
+          # ═══ 2. 校验描述文件 ═══
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          PP_SIZE=$(stat -f%z "$RUNNER_TEMP/profile.mobileprovision")
+          if [ "${PP_SIZE}" -lt 500 ]; then
+            echo "❌ IOS_PROVISIONING_PROFILE_BASE64 解码后仅 ${PP_SIZE} 字节，内容不完整或为空"
+            echo "   请确认该 Secret 配置的是 .mobileprovision 描述文件（不是 .p12 证书！）"
+            echo "   生成命令（macOS）: base64 -i xxx.mobileprovision | pbcopy"
+            exit 1
+          fi
+          echo "✅ 描述文件: ${PP_SIZE} 字节"
+
+          # ═══ 3. 描述文件格式校验（security cms 解包为 plist） ═══
+          if ! security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist" 2>/dev/null; then
+            echo "❌ 描述文件无法解析（security cms -D 失败）——文件损坏，或内容其实是别的文件"
+            echo "   实际内容类型: $(file -b "$RUNNER_TEMP/profile.mobileprovision")"
+            echo "   .mobileprovision 应为 CMS/PKCS7 格式；若显示 'data' 且能被 unzip 识别，多半是把 p12 配错到这里了"
+            exit 1
+          fi
+
+          # ═══ 4. p12 完整性 + 密码预检（比 security import 报错更明确） ═══
+          if ! openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin pass:"$IOS_CERTIFICATES_PASSWORD" -noout 2>/dev/null; then
+            echo "❌ p12 预检失败：文件被截断（base64 复制不完整）或密码（IOS_CERTIFICATES_PASSWORD）错误"
+            echo "   本地验证命令: openssl pkcs12 -in 证书.p12 -passin pass:'你的密码' -noout && echo OK"
+            exit 1
+          fi
+          echo "✅ p12 完整性与密码预检通过"
+
+          # ═══ 5. 导入 Keychain ═══
           KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
@@ -288,23 +328,23 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          echo "$IOS_CERTIFICATES_P12_BASE64" | base64 --decode > $RUNNER_TEMP/cert.p12
-          security import $RUNNER_TEMP/cert.p12 -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          if ! security import "$RUNNER_TEMP/cert.p12" -P "$IOS_CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"; then
+            echo "❌ 证书导入失败：密码错误（IOS_CERTIFICATES_PASSWORD）或 p12 文件损坏"
+            exit 1
+          fi
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
-          rm $RUNNER_TEMP/cert.p12
+          rm "$RUNNER_TEMP/cert.p12"
 
-          # 安装描述文件（解析 UUID 后按规范命名放入标准目录）
-          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > $RUNNER_TEMP/profile.mobileprovision
+          # ═══ 5. 安装描述文件（从已解析的 plist 读取 UUID / Name，避免空数据） ═══
           mkdir -p ~/Library/MobileDevice/"Provisioning Profiles"
-          UUID=$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" | /usr/libexec/PlistBuddy -c 'Print :UUID' /dev/stdin)
+          UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
           cp "$RUNNER_TEMP/profile.mobileprovision" ~/Library/MobileDevice/"Provisioning Profiles/${UUID}.mobileprovision"
 
           # 记录 profile 名称，供 xcodebuild 的 PROVISIONING_PROFILE_SPECIFIER 使用
-          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" \
-            | /usr/libexec/PlistBuddy -c 'Print :Name' /dev/stdin > "$RUNNER_TEMP/profile_name.txt"
-          echo "Profile: $(cat "$RUNNER_TEMP/profile_name.txt")"
+          /usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist" > "$RUNNER_TEMP/profile_name.txt"
+          echo "✅ Profile: $(cat "$RUNNER_TEMP/profile_name.txt") (UUID: ${UUID})"
 
       # ────────── 构建：已签名（Ad Hoc 导出） ──────────
       - name: 构建 iOS IPA（已签名）
