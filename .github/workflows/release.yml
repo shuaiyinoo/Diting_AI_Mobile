@@ -370,21 +370,32 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" \
             clean archive
 
-          cat > "$RUNNER_TEMP/exportOptions.plist" <<'PLIST'
+          # manual 签名导出必须显式给出 provisioningProfiles 映射（bundle id → profile 名），
+          # 否则报 "exportArchive requires a provisioning profile"；
+          # method 用 release-testing（ad-hoc 的现行名称，Ad Hoc 分发语义不变）
+          cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
             <key>method</key>
-            <string>ad-hoc</string>
+            <string>release-testing</string>
             <key>signingStyle</key>
             <string>manual</string>
+            <key>signingCertificate</key>
+            <string>iPhone Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.diting.mobile</key>
+              <string>${PROFILE_NAME}</string>
+            </dict>
             <key>stripSwiftSymbols</key>
             <true/>
           </dict>
           </plist>
           PLIST
-          # 团队 ID 由 export 时根据证书自动推断，无需硬编码
+          echo "=== exportOptions.plist ==="
+          cat "$RUNNER_TEMP/exportOptions.plist"
 
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
