@@ -117,7 +117,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.2
 
       - name: 安装 JDK 21（Capacitor 8 的 Android 模块要求 sourceCompatibility 21）
         uses: actions/setup-java@v4
@@ -253,7 +253,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.23.2
 
       # 同 Android job：用 npm install 规避 lock 文件不同步问题
       - name: 安装依赖
@@ -365,6 +365,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
             DEVELOPMENT_TEAM="${IOS_TEAM_ID}" \
             PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" \
             clean archive
