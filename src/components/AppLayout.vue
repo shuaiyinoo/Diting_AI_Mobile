@@ -7,9 +7,10 @@ import { KeyRound, MonitorPlay, ChevronDown, ChevronUp } from '@lucide/vue'
 import { api, type DeviceInfo } from '@/services/api'
 import { requestWake } from '@/services/wake'
 import { useAppStore } from '@/stores/app'
-import { Bot, MessageSquare, Settings } from '@lucide/vue'
+import { Bot, MessageSquare, Settings, FolderClosed } from '@lucide/vue'
 import ChatView from '@/views/ChatView.vue'
 import AgentView from '@/views/AgentView.vue'
+import FilesView from '@/views/FilesView.vue'
 import SettingsPanel from '@/components/SettingsPanel.vue'
 import ChatInputBar from '@/components/ChatInputBar.vue'
 
@@ -44,20 +45,24 @@ onBeforeUnmount(() => {
 const tabs = ref<TabItem[]>([
   { key: 'chat', label: 'Chat', icon: markRaw(MessageSquare) },
   { key: 'agent', label: 'Agent', icon: markRaw(Bot) },
+  { key: 'files', label: '文件', icon: markRaw(FolderClosed) },
   { key: 'settings', label: '设置', icon: markRaw(Settings) },
 ])
-const validTabs = new Set(['chat', 'agent', 'settings'])
+const validTabs = new Set(['chat', 'agent', 'files', 'settings'])
 const activeTab = ref<string>('chat')
 
 /** 内容区避让固定菜单 */
 const contentPaddingClass = computed(() => (isWide.value ? 'pl-tab' : 'pb-tab'))
-/** 仅 Chat / Agent 页显示远程连接按钮，设置页不显示 */
+/** 仅 Chat / Agent 页显示远程连接按钮，文件页和设置页不显示 */
 const showRemoteBar = computed(() => activeTab.value === 'chat' || activeTab.value === 'agent')
+/** 文件页也显示侧边栏拖动 */
+const showSidebarBar = computed(
+  () => activeTab.value === 'chat' || activeTab.value === 'agent' || activeTab.value === 'files',
+)
 
 watch(activeTab, (key) => {
   router.replace({ query: { ...router.currentRoute.value.query, tab: key } })
-  // 设置页无侧边栏
-  if (key === 'settings') sidebarDrawerOpen.value = false
+  if (key === 'settings' || key === 'files') sidebarDrawerOpen.value = false
 })
 
 function initFromRoute() {
@@ -192,7 +197,7 @@ function onSend(text: string) {
       <div>
         <h1 class="text-xl font-semibold tracking-tight">Diting Mobile</h1>
         <p class="mt-0.5 text-xs text-muted-foreground">
-          {{ activeTab === 'chat' ? '智能对话' : activeTab === 'agent' ? '智能体' : '设置' }}
+          {{ activeTab === 'chat' ? '智能对话' : activeTab === 'agent' ? '智能体' : activeTab === 'files' ? '文件管理' : '设置' }}
         </p>
       </div>
 
@@ -281,6 +286,9 @@ function onSend(text: string) {
       <div v-show="activeTab === 'agent'" class="min-h-0 flex-1 overflow-hidden">
         <AgentView :is-wide="isWide" :sidebar-width="sidebarWidth" :sidebar-open="sidebarDrawerOpen" @select="onSessionSelect" @toggle-sidebar="toggleSidebar" />
       </div>
+      <div v-show="activeTab === 'files'" class="min-h-0 flex-1 overflow-hidden">
+        <FilesView :is-wide="isWide" :sidebar-width="sidebarWidth" :sidebar-open="sidebarDrawerOpen" @toggle-sidebar="toggleSidebar" />
+      </div>
       <div v-show="activeTab === 'settings'" class="min-h-0 flex-1 overflow-hidden">
         <SettingsPanel />
       </div>
@@ -299,10 +307,9 @@ function onSend(text: string) {
         />
       </div>
 
-      <!-- 大屏拖动条：在 main 层渲染，h-full 覆盖含输入栏的完整高度 -->
-      <!-- touch-action: none 防止移动端滚动手势拦截 pointermove -->
+      <!-- 大屏拖动条：Chat/Agent/文件页均有侧边栏拖动 -->
       <div
-        v-if="isWide && showRemoteBar && sidebarDrawerOpen && !remoteFullscreen"
+        v-if="isWide && showSidebarBar && sidebarDrawerOpen && !remoteFullscreen"
         class="absolute top-0 z-40 h-full w-2 cursor-col-resize touch-none"
         :style="{ left: `${sidebarWidth - 4}px` }"
         @pointerdown="onSidebarDragStart"

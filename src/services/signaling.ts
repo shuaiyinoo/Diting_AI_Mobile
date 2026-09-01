@@ -1,7 +1,7 @@
 import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs'
 import { inflate } from 'pako'
 import type { PeerRole, SignalMessage, SignalPayload } from '@/types/remote'
-import type { SyncAction, SyncMessage, SyncResultMessage, SyncMessageItem, StreamSyncMessage, StreamSyncRequest } from '@/types/sync'
+import type { SyncAction, SyncMessage, SyncResultMessage, SyncMessageItem, StreamSyncMessage, StreamSyncRequest, FileSyncData, FileContentResult } from '@/types/sync'
 
 /**
  * STOMP 信令客户端（全局单例）
@@ -244,6 +244,21 @@ export class SignalingClient {
     const raw = await this.syncRequest('syncAgentMessages', 15_000, sessionId)
     const result = JSON.parse(raw) as SyncMessageItem[]
     return result
+  }
+
+  /** 便捷方法：拉取文件数据（文件夹列表 + 每个文件夹的树形结构） */
+  async fetchFileData() {
+    const raw = await this.syncRequest('syncFileData', 15_000)
+    return JSON.parse(raw) as FileSyncData
+  }
+
+  /** 便捷方法：拉取文件内容（文本文件预览）
+   *
+   * sessionId 参数为 fileItemId 的字符串形式
+   */
+  async fetchFileContent(fileItemId: number) {
+    const raw = await this.syncRequest('syncFileContent', 15_000, fileItemId.toString())
+    return JSON.parse(raw) as FileContentResult
   }
 
   /** 处理 Desktop 回传的 sync 结果 */

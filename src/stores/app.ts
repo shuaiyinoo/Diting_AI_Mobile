@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { api } from '@/services/api'
 import { http } from '@/services/api'
 import { SignalingClient } from '@/services/signaling'
-import type { ChatSessionItem, AgentSyncData, SyncMessageItem, StreamSyncMessage, SessionStatus, SessionType } from '@/types/sync'
+import type { ChatSessionItem, AgentSyncData, SyncMessageItem, StreamSyncMessage, SessionStatus, SessionType, FileSyncData, FileContentResult } from '@/types/sync'
 
 const KEY_TOKEN = 'diting.token'
 const KEY_USER = 'diting.user'
@@ -51,6 +51,8 @@ export const useAppStore = defineStore('app', () => {
   const chatSessions = ref<ChatSessionItem[]>([])
   /** Agent 项目+会话列表（从 Desktop 同步） */
   const agentData = ref<AgentSyncData>({ workspaces: [], sessions: [] })
+  /** 文件数据（从 Desktop 同步） */
+  const fileData = ref<FileSyncData>({ folders: [], trees: {} })
   /** 数据加载状态 */
   const syncLoading = ref(false)
 
@@ -104,6 +106,7 @@ export const useAppStore = defineStore('app', () => {
     syncConnected.value = false
     chatSessions.value = []
     agentData.value = { workspaces: [], sessions: [] }
+    fileData.value = { folders: [], trees: {} }
     chatMessagesBySession.value = {}
     agentMessagesBySession.value = {}
   }
@@ -130,11 +133,33 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  /** 拉取文件数据（文件夹列表 + 树形结构） */
+  async function refreshFileData() {
+    if (!signaling.value?.connected) return
+    try {
+      fileData.value = await signaling.value.fetchFileData()
+      console.log(`[app] 已同步文件数据: ${fileData.value.folders.length} 个文件夹`)
+    } catch (e) {
+      console.error('[app] 同步文件数据失败:', e)
+    }
+  }
+
+  /** 拉取文件内容（文本文件预览） */
+  async function loadFileContent(fileItemId: number): Promise<FileContentResult | null> {
+    if (!signaling.value?.connected) return null
+    try {
+      return await signaling.value.fetchFileContent(fileItemId)
+    } catch (e) {
+      console.error('[app] 同步文件内容失败:', e)
+      return null
+    }
+  }
+
   /** 拉取全部数据 */
   async function refreshAll() {
     syncLoading.value = true
     try {
-      await Promise.all([refreshChatSessions(), refreshAgentData()])
+      await Promise.all([refreshChatSessions(), refreshAgentData(), refreshFileData()])
     } finally {
       syncLoading.value = false
     }
@@ -532,6 +557,7 @@ export const useAppStore = defineStore('app', () => {
     syncConnected,
     chatSessions,
     agentData,
+    fileData,
     syncLoading,
     chatMessagesBySession,
     agentMessagesBySession,
@@ -543,6 +569,8 @@ export const useAppStore = defineStore('app', () => {
     disconnectSync,
     refreshChatSessions,
     refreshAgentData,
+    refreshFileData,
+    loadFileContent,
     refreshAll,
     loadChatMessages,
     loadAgentMessages,

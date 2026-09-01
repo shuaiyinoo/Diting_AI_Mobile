@@ -8,7 +8,7 @@
  */
 
 /** sync 请求动作 */
-export type SyncAction = 'syncChatSessions' | 'syncAgentData' | 'syncChatMessages' | 'syncAgentMessages'
+export type SyncAction = 'syncChatSessions' | 'syncAgentData' | 'syncChatMessages' | 'syncAgentMessages' | 'syncFileData' | 'syncFileContent'
 
 /** sync 请求消息 */
 export interface SyncMessage {
@@ -68,6 +68,76 @@ export interface AgentSyncData {
 }
 
 /* ══════════════════ 消息历史类型 ══════════════════ */
+
+/** 文件夹项（与 Desktop 端 AuthorizedFolder 对齐） */
+export interface FileFolderItem {
+  id: number
+  /** 文件夹路径（本地路径或远程根路径） */
+  path: string
+  /** 文件夹名称 */
+  folder_name: string
+  /** 协议类型：local / ftp / ftps / sftp / smb / webdav / s3 */
+  protocol: string
+  /** 别名（用户自定义名称） */
+  alias: string | null
+  /** 同步是否启用 */
+  sync_enabled: number
+}
+
+/** 文件项（与 Desktop 端 FileItem 对齐） */
+export interface FileItem {
+  id: number
+  folder_id: number
+  parent_id: number
+  name: string
+  type: string
+  size: number
+  mtime: string
+  relative_path: string
+  is_dir: number
+  /** RAG 处理状态 */
+  status: string
+}
+
+/** 文件夹树节点（与 Desktop 端 FileItemTreeNode 对齐） */
+export interface FileItemTreeNode {
+  id: number
+  folder_id: number
+  parent_id: number
+  name: string
+  type: string
+  size: number
+  mtime: string
+  relative_path: string
+  is_dir: number
+  status: string
+  /** 子节点数量 */
+  fileCount: number
+  isRoot?: boolean
+  fullPath?: string
+  children?: FileItemTreeNode[]
+}
+
+/** 文件数据同步结果（包含文件夹列表 + 每个文件夹的子树） */
+export interface FileSyncData {
+  folders: FileFolderItem[]
+  /** 每个文件夹的树形结构，key = folderId */
+  trees: Record<number, FileItemTreeNode[]>
+}
+
+/** 文件内容同步结果 */
+export interface FileContentResult {
+  /** 文件内容（明文 UTF-8，外层 sync 协议会统一压缩传输） */
+  content: string
+  /** 文件名 */
+  name: string
+  /** 文件大小 */
+  size: number
+  /** 文件类型（扩展名） */
+  type: string
+  /** 是否为 Markdown 文件（true=可渲染，false=不支持预览） */
+  isText: boolean
+}
 
 /** 消息引用证据 */
 export interface Citation {
