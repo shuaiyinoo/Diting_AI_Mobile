@@ -313,9 +313,12 @@ jobs:
           fi
 
           # ═══ 4. p12 完整性 + 密码预检（比 security import 报错更明确） ═══
-          if ! openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin pass:"$IOS_CERTIFICATES_PASSWORD" -noout 2>/dev/null; then
+          # 双重尝试：钥匙串导出的 p12 常为 RC2 老式加密，OpenSSL 3 需 -legacy 才能解；
+          # LibreSSL（macOS 预装）则直接支持。两种都失败才算真的坏了。
+          if ! openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin pass:"$IOS_CERTIFICATES_PASSWORD" -noout 2>/dev/null \
+             && ! openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin pass:"$IOS_CERTIFICATES_PASSWORD" -noout -legacy 2>/dev/null; then
             echo "❌ p12 预检失败：文件被截断（base64 复制不完整）或密码（IOS_CERTIFICATES_PASSWORD）错误"
-            echo "   本地验证命令: openssl pkcs12 -in 证书.p12 -passin pass:'你的密码' -noout && echo OK"
+            echo "   本地验证命令: openssl pkcs12 -in 证书.p12 -passin pass:'你的密码' -noout -legacy && echo OK"
             exit 1
           fi
           echo "✅ p12 完整性与密码预检通过"
